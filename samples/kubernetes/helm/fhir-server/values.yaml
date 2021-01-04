@@ -127,7 +127,6 @@ ingress:
   hosts:
     - host: chart-example.local
       paths: ["/"]
-      pathType: ImplementationSpecific
   tls: []
   #  - secretName: chart-example-tls
   #    hosts:
