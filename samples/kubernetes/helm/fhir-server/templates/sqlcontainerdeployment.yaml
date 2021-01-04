@@ -27,7 +27,7 @@ spec:
       containers:
         - name: mssql
           securityContext:
-            {{- toYaml .Values.database.sqlContainer.securityContext | nindent 12 }}
+            {{- toYaml .Values.securityContext | nindent 12 }}
           image: "{{ .Values.database.sqlContainer.image.registry }}/{{ .Values.database.sqlContainer.image.repository }}:{{ .Values.database.sqlContainer.image.tag }}"
           imagePullPolicy: {{ .Values.database.sqlContainer.image.pullPolicy }}
           env:
