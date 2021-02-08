@@ -4,6 +4,7 @@
 // -------------------------------------------------------------------------------------------------
 
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Threading;
@@ -48,12 +49,19 @@ namespace Microsoft.Health.Fhir.Core.Features.Operations.Export
 
             if (outcome.JobRecord.Status == OperationStatus.Completed)
             {
+                List<ExportFileInfo> allFiles = new List<ExportFileInfo>();
+                foreach (List<ExportFileInfo> fileList in outcome.JobRecord.Output.Values)
+                {
+                    allFiles.AddRange(fileList);
+                }
+
                 var jobResult = new ExportJobResult(
                     outcome.JobRecord.QueuedTime,
                     outcome.JobRecord.RequestUri,
                     requiresAccessToken: false,
-                    outcome.JobRecord.Output.Values.Select(x => x.ToExportOutputResponse()).OrderBy(x => x.Type, StringComparer.Ordinal).ToList(),
-                    outcome.JobRecord.Error.Select(x => x.ToExportOutputResponse()).ToList());
+                    allFiles.Select(x => x.ToExportOutputResponse()).OrderBy(x => x.Type, StringComparer.Ordinal).ToList(),
+                    outcome.JobRecord.Error.Select(x => x.ToExportOutputResponse()).ToList(),
+                    outcome.JobRecord.Issues);
 
                 exportResponse = new GetExportResponse(HttpStatusCode.OK, jobResult);
             }

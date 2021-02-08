@@ -50,9 +50,10 @@ namespace Microsoft.Health.Fhir.Tests.Integration.Persistence
             _searchParameterDefinitionManager = searchParameterDefinitionManager;
             _sqlServerFhirModel = sqlServerFhirModel;
             _sqlConnectionFactory = sqlConnectionFactory;
+            _searchParameterDefinitionManager.StartAsync(CancellationToken.None).Wait();
         }
 
-        public async Task CreateAndInitializeDatabase(string databaseName, bool forceIncrementalSchemaUpgrade, SchemaInitializer schemaInitializer = null, CancellationToken cancellationToken = default)
+        public async Task CreateAndInitializeDatabase(string databaseName, int maximumSupportedSchemaVersion, bool forceIncrementalSchemaUpgrade, SchemaInitializer schemaInitializer = null, CancellationToken cancellationToken = default)
         {
             var testConnectionString = new SqlConnectionStringBuilder(_initialConnectionString) { InitialCatalog = databaseName }.ToString();
             schemaInitializer = schemaInitializer ?? CreateSchemaInitializer(testConnectionString);
@@ -65,7 +66,11 @@ namespace Microsoft.Health.Fhir.Tests.Integration.Persistence
                 using (SqlCommand command = connection.CreateCommand())
                 {
                     command.CommandTimeout = 600;
-                    command.CommandText = $"CREATE DATABASE {databaseName}";
+                    command.CommandText = @$"
+                        IF NOT EXISTS (SELECT * FROM sys.databases WHERE name = '{databaseName}')
+                        BEGIN
+                          CREATE DATABASE {databaseName};
+                        END";
                     await command.ExecuteNonQueryAsync(cancellationToken);
                 }
             }
@@ -90,8 +95,7 @@ namespace Microsoft.Health.Fhir.Tests.Integration.Persistence
                 });
 
             await schemaInitializer.InitializeAsync(forceIncrementalSchemaUpgrade, cancellationToken);
-            await _searchParameterDefinitionManager.StartAsync(CancellationToken.None);
-            _sqlServerFhirModel.Initialize(SchemaVersionConstants.Max, true);
+            _sqlServerFhirModel.Initialize(maximumSupportedSchemaVersion, true);
         }
 
         public async Task DeleteDatabase(string databaseName, CancellationToken cancellationToken = default)

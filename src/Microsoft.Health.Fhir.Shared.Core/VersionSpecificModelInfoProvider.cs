@@ -5,17 +5,19 @@
 
 using System;
 using System.Collections.Generic;
-
-#if R5
+using System.IO;
 using System.Linq;
-#endif
-
+using EnsureThat;
 using Hl7.Fhir.ElementModel;
 using Hl7.Fhir.FhirPath;
 using Hl7.Fhir.Model;
+using Hl7.Fhir.Serialization;
 using Hl7.Fhir.Specification;
 using Hl7.FhirPath;
+using Microsoft.Health.Fhir.Core.Features.Persistence;
+using Microsoft.Health.Fhir.Core.Features.Validation;
 using Microsoft.Health.Fhir.Core.Models;
+using Newtonsoft.Json;
 
 namespace Microsoft.Health.Fhir.Core
 {
@@ -45,11 +47,12 @@ namespace Microsoft.Health.Fhir.Core
 
         public IReadOnlyCollection<string> GetResourceTypeNames()
         {
-            var supportedResources = ModelInfo.SupportedResources;
+            List<string> supportedResources = ModelInfo.SupportedResources;
 
-#if R5
-            supportedResources = supportedResources.Where(x => x != "CanonicalResource" && x != "MetadataResource").ToList();
-#endif
+            if (Version == FhirSpecification.R5)
+            {
+                supportedResources = supportedResources.Where(x => x != "CanonicalResource" && x != "MetadataResource").ToList();
+            }
 
             return supportedResources;
         }
@@ -70,6 +73,35 @@ namespace Microsoft.Health.Fhir.Core
             {
                 ElementResolver = elementResolver,
             };
+        }
+
+        public ITypedElement ToTypedElement(ISourceNode sourceNode)
+        {
+            EnsureArg.IsNotNull(sourceNode);
+
+            return sourceNode.ToTypedElement(StructureDefinitionSummaryProvider);
+        }
+
+        public ITypedElement ToTypedElement(RawResource rawResource)
+        {
+            EnsureArg.IsNotNull(rawResource, nameof(rawResource));
+
+            using TextReader reader = new StringReader(rawResource.Data);
+            using JsonReader jsonReader = new JsonTextReader(reader);
+            try
+            {
+                ISourceNode sourceNode = FhirJsonNode.Read(jsonReader);
+                return sourceNode.ToTypedElement(StructureDefinitionSummaryProvider);
+            }
+            catch (FormatException ex)
+            {
+                var issue = new OperationOutcomeIssue(
+                    OperationOutcomeConstants.IssueSeverity.Fatal,
+                    OperationOutcomeConstants.IssueType.Invalid,
+                    ex.Message);
+
+                throw new ResourceNotValidException(new List<OperationOutcomeIssue>() { issue });
+            }
         }
     }
 }

@@ -5,7 +5,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
 using EnsureThat;
@@ -40,26 +39,22 @@ namespace Microsoft.Health.Fhir.Core.Features.Search.Expressions.Parsers
                     (SearchParamType.Reference, referenceSearchValueParser.Parse),
                     (SearchParamType.String, StringSearchValue.Parse),
                     (SearchParamType.Token, TokenSearchValue.Parse),
-                    (SearchParamType.Uri, UriSearchValue.Parse),
+                    (SearchParamType.Uri, str => UriSearchValue.Parse(str, false, ModelInfoProvider.Instance)),
                 }
                 .ToDictionary(entry => entry.type, entry => CreateParserWithErrorHandling(entry.parser));
         }
 
         public Expression Parse(
             SearchParameterInfo searchParameter,
-            SearchModifierCode? modifier,
+            SearchModifier modifier,
             string value)
         {
             EnsureArg.IsNotNull(searchParameter, nameof(searchParameter));
-
-            Debug.Assert(
-                modifier == null || Enum.IsDefined(typeof(SearchModifierCode), modifier.Value),
-                "Invalid modifier.");
             EnsureArg.IsNotNullOrWhiteSpace(value, nameof(value));
 
             Expression outputExpression;
 
-            if (modifier == SearchModifierCode.Missing)
+            if (modifier?.SearchModifierCode == SearchModifierCode.Missing)
             {
                 // We have to handle :missing modifier specially because if :missing modifier is specified,
                 // then the value is a boolean string indicating whether the parameter is missing or not instead of
@@ -73,7 +68,7 @@ namespace Microsoft.Health.Fhir.Core.Features.Search.Expressions.Parsers
                 return Expression.MissingSearchParameter(searchParameter, isMissing);
             }
 
-            if (modifier == SearchModifierCode.Text)
+            if (modifier?.SearchModifierCode == SearchModifierCode.Text)
             {
                 // We have to handle :text modifier specially because if :text modifier is supplied for token search param,
                 // then we want to search the display text using the specified text, and therefore
@@ -81,7 +76,7 @@ namespace Microsoft.Health.Fhir.Core.Features.Search.Expressions.Parsers
                 if (searchParameter.Type != SearchParamType.Token)
                 {
                     throw new InvalidSearchOperationException(
-                        string.Format(CultureInfo.InvariantCulture, Resources.ModifierNotSupported, modifier, searchParameter.Name));
+                        string.Format(CultureInfo.InvariantCulture, Resources.ModifierNotSupported, modifier, searchParameter.Code));
                 }
 
                 outputExpression = Expression.StartsWith(FieldName.TokenText, null, value, true);
@@ -94,7 +89,7 @@ namespace Microsoft.Health.Fhir.Core.Features.Search.Expressions.Parsers
                     if (modifier != null)
                     {
                         throw new InvalidSearchOperationException(
-                            string.Format(CultureInfo.InvariantCulture, Resources.ModifierNotSupported, modifier, searchParameter.Name));
+                            string.Format(CultureInfo.InvariantCulture, Resources.ModifierNotSupported, modifier, searchParameter.Code));
                     }
 
                     IReadOnlyList<string> orParts = value.SplitByOrSeparator();
@@ -106,7 +101,7 @@ namespace Microsoft.Health.Fhir.Core.Features.Search.Expressions.Parsers
                         if (compositeValueParts.Count > searchParameter.Component.Count)
                         {
                             throw new InvalidSearchOperationException(
-                                string.Format(CultureInfo.InvariantCulture, Resources.NumberOfCompositeComponentsExceeded, searchParameter.Name));
+                                string.Format(CultureInfo.InvariantCulture, Resources.NumberOfCompositeComponentsExceeded, searchParameter.Code));
                         }
 
                         var compositeExpressions = new Expression[compositeValueParts.Count];
@@ -145,7 +140,7 @@ namespace Microsoft.Health.Fhir.Core.Features.Search.Expressions.Parsers
 
         private Expression Build(
             SearchParameterInfo searchParameter,
-            SearchModifierCode? modifier,
+            SearchModifier modifier,
             int? componentIndex,
             string value)
         {
@@ -183,9 +178,10 @@ namespace Microsoft.Health.Fhir.Core.Features.Search.Expressions.Parsers
             {
                 // This is a single value expression.
                 ISearchValue searchValue = parser(valueSpan.ToString());
+                searchValue = ApplyTargetTypeModifier(modifier, searchValue);
 
                 return helper.Build(
-                    searchParameter.Name,
+                    searchParameter.Code,
                     modifier,
                     comparator,
                     componentIndex,
@@ -199,19 +195,73 @@ namespace Microsoft.Health.Fhir.Core.Features.Search.Expressions.Parsers
                 }
 
                 // This is a multiple value expression.
-                Expression[] expressions = parts.Select(part =>
+                if (modifier?.SearchModifierCode == SearchModifierCode.Not)
                 {
-                    ISearchValue searchValue = parser(part);
+                    Expression[] expressions = parts.Select(part =>
+                    {
+                        ISearchValue searchValue = parser(part);
 
-                    return helper.Build(
-                        searchParameter.Name,
-                        modifier,
-                        comparator,
-                        componentIndex,
-                        searchValue);
-                }).ToArray();
+                        return helper.Build(
+                            searchParameter.Code,
+                            null,
+                            comparator,
+                            componentIndex,
+                            searchValue);
+                    }).ToArray();
 
-                return Expression.Or(expressions);
+                    return Expression.Not(Expression.Or(expressions));
+                }
+                else
+                {
+                    Expression[] expressions = parts.Select(part =>
+                    {
+                        ISearchValue searchValue = parser(part);
+                        searchValue = ApplyTargetTypeModifier(modifier, searchValue);
+
+                        return helper.Build(
+                            searchParameter.Code,
+                            modifier,
+                            comparator,
+                            componentIndex,
+                            searchValue);
+                    }).ToArray();
+
+                    return Expression.Or(expressions);
+                }
+            }
+
+            ISearchValue ApplyTargetTypeModifier(SearchModifier modifier, ISearchValue source)
+            {
+                var referenceSearchValue = source as ReferenceSearchValue;
+                if (referenceSearchValue == null || modifier?.SearchModifierCode != SearchModifierCode.Type)
+                {
+                    return source;
+                }
+
+                if (!string.IsNullOrEmpty(referenceSearchValue.ResourceType))
+                {
+                    if (string.Equals(referenceSearchValue.ResourceType, modifier.ResourceType, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return source;
+                    }
+
+                    throw new InvalidSearchOperationException(
+                        string.Format(Core.Resources.ModifierNotSupported, modifier, searchParameter.Code));
+                }
+
+                try
+                {
+                    return new ReferenceSearchValue(
+                        referenceSearchValue.Kind,
+                        referenceSearchValue.BaseUri,
+                        modifier.ResourceType,
+                        referenceSearchValue.ResourceId);
+                }
+                catch (ArgumentException)
+                {
+                    throw new InvalidSearchOperationException(
+                        string.Format(Core.Resources.ModifierNotSupported, modifier, searchParameter.Code));
+                }
             }
         }
 

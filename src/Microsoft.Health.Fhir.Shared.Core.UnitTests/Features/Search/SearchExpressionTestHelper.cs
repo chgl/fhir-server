@@ -18,7 +18,7 @@ namespace Microsoft.Health.Fhir.Core.UnitTests.Features.Search
         internal static void ValidateSearchParameterExpression(Expression expression, string paramName, Action<Expression> valueValidator)
         {
             SearchParameterExpression parameterExpression = Assert.IsType<SearchParameterExpression>(expression);
-            Assert.Equal(paramName, parameterExpression.Parameter.Name);
+            Assert.Equal(paramName, parameterExpression.Parameter.Code);
             valueValidator(parameterExpression.Expression);
         }
 
@@ -36,9 +36,25 @@ namespace Microsoft.Health.Fhir.Core.UnitTests.Features.Search
         {
             ChainedExpression chainedExpression = Assert.IsType<ChainedExpression>(expression);
 
-            Assert.Equal(resourceType.ToString(), chainedExpression.ResourceType);
+            Assert.Collection(chainedExpression.ResourceTypes, x => Assert.Equal(resourceType.ToString(), x));
             Assert.Equal(referenceSearchParam, chainedExpression.ReferenceSearchParameter);
-            Assert.Equal(targetResourceType, chainedExpression.TargetResourceType);
+            Assert.Collection(chainedExpression.TargetResourceTypes, x => Assert.Equal(targetResourceType, x));
+
+            childExpressionValidator(chainedExpression.Expression);
+        }
+
+        public static void ValidateChainedExpression(
+            Expression expression,
+            Hl7.Fhir.Model.ResourceType resourceType,
+            SearchParameterInfo referenceSearchParam,
+            string[] targetResourceTypes,
+            Action<Expression> childExpressionValidator)
+        {
+            ChainedExpression chainedExpression = Assert.IsType<ChainedExpression>(expression);
+
+            Assert.Collection(chainedExpression.ResourceTypes, x => Assert.Equal(resourceType.ToString(), x));
+            Assert.Equal(referenceSearchParam, chainedExpression.ReferenceSearchParameter);
+            Assert.Collection(chainedExpression.TargetResourceTypes, targetResourceTypes.Select<string, Action<string>>(t => x => Assert.Equal(t, x)).ToArray());
 
             childExpressionValidator(chainedExpression.Expression);
         }
@@ -52,9 +68,9 @@ namespace Microsoft.Health.Fhir.Core.UnitTests.Features.Search
         {
             ChainedExpression chainedExpression = Assert.IsType<ChainedExpression>(expression);
 
-            Assert.Equal(resourceType.ToString(), chainedExpression.ResourceType);
+            Assert.Collection(chainedExpression.ResourceTypes, x => Assert.Equal(resourceType.ToString(), x));
             Assert.Equal(referenceSearchParam, chainedExpression.ReferenceSearchParameter);
-            Assert.Equal(targetResourceType.ToString(), chainedExpression.TargetResourceType.ToString());
+            Assert.Collection(chainedExpression.TargetResourceTypes, x => Assert.Equal(targetResourceType.ToString(), x));
 
             childExpressionValidator(chainedExpression.Expression);
         }
@@ -126,7 +142,7 @@ namespace Microsoft.Health.Fhir.Core.UnitTests.Features.Search
         {
             MissingSearchParameterExpression mpExpression = Assert.IsType<MissingSearchParameterExpression>(expression);
 
-            Assert.Equal(expectedParamName, mpExpression.Parameter.Name);
+            Assert.Equal(expectedParamName, mpExpression.Parameter.Code);
             Assert.Equal(expectedIsMissing, mpExpression.IsMissing);
         }
 
@@ -137,6 +153,14 @@ namespace Microsoft.Health.Fhir.Core.UnitTests.Features.Search
             MissingFieldExpression mfExpression = Assert.IsType<MissingFieldExpression>(expression);
 
             Assert.Equal(expectedFieldName, mfExpression.FieldName);
+        }
+
+        public static void ValidateNotExpression(
+            Expression expression,
+            Action<Expression> subValidator)
+        {
+            NotExpression notExpression = Assert.IsType<NotExpression>(expression);
+            subValidator(notExpression.Expression);
         }
 
         public static void ValidateCompartmentSearchExpression(

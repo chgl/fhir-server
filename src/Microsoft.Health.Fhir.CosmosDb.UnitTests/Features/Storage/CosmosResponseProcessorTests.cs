@@ -90,7 +90,6 @@ namespace Microsoft.Health.Fhir.CosmosDb.UnitTests.Features.Storage
         [InlineData(KnownCosmosDbCmkSubStatusValue.KeyVaultServiceUnavailable)]
         [InlineData(KnownCosmosDbCmkSubStatusValue.KeyVaultWrapUnwrapFailure)]
         [InlineData(KnownCosmosDbCmkSubStatusValue.InvalidKeyVaultKeyUri)]
-        [InlineData(KnownCosmosDbCmkSubStatusValue.InvalidInputBytes)]
         [InlineData(KnownCosmosDbCmkSubStatusValue.KeyVaultInternalServerError)]
         [InlineData(KnownCosmosDbCmkSubStatusValue.KeyVaultDnsNotResolved)]
         public async Task GivenAnExceptionWithCmkSubStatus_WhenProcessing_ThenExceptionShouldThrow(KnownCosmosDbCmkSubStatusValue subStatusValue)
@@ -118,6 +117,22 @@ namespace Microsoft.Health.Fhir.CosmosDb.UnitTests.Features.Storage
             ResponseMessage response = CreateResponseException("fail", HttpStatusCode.TooManyRequests);
 
             await _cosmosResponseProcessor.ProcessErrorResponse(response);
+        }
+
+        [Fact]
+        public void GivenAThrottlingResponseWithRetryAfterHeader_WhenProcessed_ThrowsWithRetryAfter()
+        {
+            var retryAfter = TimeSpan.FromMilliseconds(200);
+
+            RequestRateExceededException exception = Assert.Throws<RequestRateExceededException>(() => _cosmosResponseProcessor.ProcessErrorResponse(HttpStatusCode.TooManyRequests, new Headers { { "x-ms-retry-after-ms", ((int)retryAfter.TotalMilliseconds).ToString() } }, "too many requests"));
+            Assert.Equal(retryAfter, exception.RetryAfter);
+        }
+
+        [Fact]
+        public void GivenAThrottlingResponseWithoutRetryAfterHeader_WhenProcessed_ThrowsWithoutRetryAfter()
+        {
+            RequestRateExceededException exception = Assert.Throws<RequestRateExceededException>(() => _cosmosResponseProcessor.ProcessErrorResponse(HttpStatusCode.TooManyRequests, new Headers(), "too many requests"));
+            Assert.Null(exception.RetryAfter);
         }
 
         private static ResponseMessage CreateResponseException(string exceptionMessage, HttpStatusCode httpStatusCode, string subStatus = null)

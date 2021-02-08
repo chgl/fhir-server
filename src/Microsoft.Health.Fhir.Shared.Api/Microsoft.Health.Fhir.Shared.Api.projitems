@@ -21,9 +21,13 @@
     <Compile Include="$(MSBuildThisFileDirectory)Features\ActionResults\OperationVersionsResult.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Features\ContentTypes\ContentTypeService.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Features\Filters\ParameterCompatibleFilter.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Features\Filters\SearchParameterFilterAttribute.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Features\Filters\ValidationQueryFilterAndParameterParserAttribute.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Features\Operations\OperationsCapabilityProvider.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Features\Resources\Bundle\BundleSerializer.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Features\Resources\IProvenanceHeaderState.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Features\Resources\ProvenanceHeaderBehavior.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Features\Resources\ProvenanceHeaderState.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Features\Routing\QueryStringParser.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Modules\FeatureFlags\Validate\ValidateFeatureModule.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Modules\FeatureFlags\Validate\ValidatePostConfigureOptions.cs" />
@@ -47,7 +51,6 @@
     <Compile Include="$(MSBuildThisFileDirectory)Features\Formatters\JsonArrayPool.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Features\Formatters\NonFhirResourceXmlOutputFormatter.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Features\Headers\FhirResultExtensions.cs" />
-    <Compile Include="$(MSBuildThisFileDirectory)Features\Headers\KnownFhirHeaders.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Features\Resources\Bundle\BundleHandler.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Features\Resources\Bundle\TransactionBundleValidator.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Features\Resources\Bundle\TransactionExceptionHandler.cs" />

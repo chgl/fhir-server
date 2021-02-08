@@ -15,10 +15,12 @@ using EnsureThat;
 using MediatR;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Primitives;
 using Microsoft.Health.Core;
 using Microsoft.Health.Extensions.DependencyInjection;
 using Microsoft.Health.Fhir.Core.Configs;
 using Microsoft.Health.Fhir.Core.Exceptions;
+using Microsoft.Health.Fhir.Core.Features.Context;
 using Microsoft.Health.Fhir.Core.Features.Operations.Export.ExportDestinationClient;
 using Microsoft.Health.Fhir.Core.Features.Operations.Export.Models;
 using Microsoft.Health.Fhir.Core.Features.Persistence;
@@ -39,15 +41,12 @@ namespace Microsoft.Health.Fhir.Core.Features.Operations.Export
         private readonly IExportDestinationClient _exportDestinationClient;
         private readonly IResourceDeserializer _resourceDeserializer;
         private readonly IMediator _mediator;
+        private readonly IFhirRequestContextAccessor _contextAccessor;
         private readonly ILogger _logger;
-
-        // Currently we will have only one file per resource type. In the future we will add the ability to split
-        // individual files based on a max file size. This could result in a single resource having multiple files.
-        // We will have to update the below mapping to support multiple ExportFileInfo per resource type.
-        private readonly IDictionary<string, ExportFileInfo> _resourceTypeToFileInfoMapping = new Dictionary<string, ExportFileInfo>();
 
         private ExportJobRecord _exportJobRecord;
         private WeakETag _weakETag;
+        private ExportFileManager _fileManager;
 
         public ExportJobTask(
             Func<IScoped<IFhirOperationDataStore>> fhirOperationDataStoreFactory,
@@ -59,6 +58,7 @@ namespace Microsoft.Health.Fhir.Core.Features.Operations.Export
             IResourceDeserializer resourceDeserializer,
             IScoped<IAnonymizerFactory> anonymizerFactory,
             IMediator mediator,
+            IFhirRequestContextAccessor contextAccessor,
             ILogger<ExportJobTask> logger)
         {
             EnsureArg.IsNotNull(fhirOperationDataStoreFactory, nameof(fhirOperationDataStoreFactory));
@@ -69,6 +69,7 @@ namespace Microsoft.Health.Fhir.Core.Features.Operations.Export
             EnsureArg.IsNotNull(exportDestinationClient, nameof(exportDestinationClient));
             EnsureArg.IsNotNull(resourceDeserializer, nameof(resourceDeserializer));
             EnsureArg.IsNotNull(mediator, nameof(mediator));
+            EnsureArg.IsNotNull(contextAccessor, nameof(contextAccessor));
             EnsureArg.IsNotNull(logger, nameof(logger));
 
             _fhirOperationDataStoreFactory = fhirOperationDataStoreFactory;
@@ -80,6 +81,7 @@ namespace Microsoft.Health.Fhir.Core.Features.Operations.Export
             _exportDestinationClient = exportDestinationClient;
             _anonymizerFactory = anonymizerFactory;
             _mediator = mediator;
+            _contextAccessor = contextAccessor;
             _logger = logger;
         }
 
@@ -90,6 +92,9 @@ namespace Microsoft.Health.Fhir.Core.Features.Operations.Export
 
             _exportJobRecord = exportJobRecord;
             _weakETag = weakETag;
+            _fileManager = new ExportFileManager(_exportJobRecord, _exportDestinationClient);
+
+            var existingFhirRequestContext = _contextAccessor.FhirRequestContext;
 
             try
             {
@@ -97,7 +102,7 @@ namespace Microsoft.Health.Fhir.Core.Features.Operations.Export
 
                 string connectionHash = string.IsNullOrEmpty(_exportJobConfiguration.StorageAccountConnection) ?
                     string.Empty :
-                    Microsoft.Health.Core.Extensions.StringExtensions.ComputeHash(_exportJobConfiguration.StorageAccountConnection);
+                    Health.Core.Extensions.StringExtensions.ComputeHash(_exportJobConfiguration.StorageAccountConnection);
 
                 if (string.IsNullOrEmpty(exportJobRecord.StorageAccountUri))
                 {
@@ -122,6 +127,17 @@ namespace Microsoft.Health.Fhir.Core.Features.Operations.Export
 
                 // Connect to export destination using appropriate client.
                 await _exportDestinationClient.ConnectAsync(exportJobConfiguration, cancellationToken, _exportJobRecord.StorageAccountContainerName);
+
+                // Add a request context so that bundle issues can be added by the SearchOptionFactory
+                var fhirRequestContext = new FhirRequestContext(
+                method: "Export",
+                uriString: "$export",
+                baseUriString: "$export",
+                correlationId: _exportJobRecord.Id,
+                requestHeaders: new Dictionary<string, StringValues>(),
+                responseHeaders: new Dictionary<string, StringValues>());
+
+                _contextAccessor.FhirRequestContext = fhirRequestContext;
 
                 // If we are resuming a job, we can detect that by checking the progress info from the job record.
                 // If it is null, then we know we are processing a new job.
@@ -201,6 +217,10 @@ namespace Microsoft.Health.Fhir.Core.Features.Operations.Export
                 _exportJobRecord.FailureDetails = new JobFailureDetails(Resources.UnknownError, HttpStatusCode.InternalServerError);
                 await CompleteJobAsync(OperationStatus.Failed, cancellationToken);
             }
+            finally
+            {
+                _contextAccessor.FhirRequestContext = existingFhirRequestContext;
+            }
         }
 
         private async Task CompleteJobAsync(OperationStatus completionStatus, CancellationToken cancellationToken)
@@ -216,12 +236,19 @@ namespace Microsoft.Health.Fhir.Core.Features.Operations.Export
 
         private async Task UpdateJobRecordAsync(CancellationToken cancellationToken)
         {
+            foreach (OperationOutcomeIssue issue in _contextAccessor.FhirRequestContext.BundleIssues)
+            {
+                _exportJobRecord.Issues.Add(issue);
+            }
+
             using (IScoped<IFhirOperationDataStore> fhirOperationDataStore = _fhirOperationDataStoreFactory())
             {
                 ExportJobOutcome updatedExportJobOutcome = await fhirOperationDataStore.Value.UpdateExportJobAsync(_exportJobRecord, _weakETag, cancellationToken);
 
                 _exportJobRecord = updatedExportJobOutcome.JobRecord;
                 _weakETag = updatedExportJobOutcome.ETag;
+
+                _contextAccessor.FhirRequestContext.BundleIssues.Clear();
             }
         }
 
@@ -291,12 +318,19 @@ namespace Microsoft.Health.Fhir.Core.Features.Operations.Export
                 }
                 else if (_exportJobRecord.ExportType == ExportJobType.All && requestedResourceTypes != null)
                 {
+                    List<string> resources = new List<string>();
+
                     foreach (var resource in requestedResourceTypes)
                     {
                         if (!filteredResources.Contains(resource))
                         {
-                            queryParametersList.Add(Tuple.Create(KnownQueryParameterNames.Type, resource));
+                            resources.Add(resource);
                         }
+                    }
+
+                    if (resources.Count > 0)
+                    {
+                        queryParametersList.Add(Tuple.Create(KnownQueryParameterNames.Type, resources.JoinByOrSeparator()));
                     }
                 }
 
@@ -481,12 +515,19 @@ namespace Microsoft.Health.Fhir.Core.Features.Operations.Export
             {
                 if (requestedResourceTypes != null)
                 {
+                    List<string> resources = new List<string>();
+
                     foreach (var resource in requestedResourceTypes)
                     {
                         if (!filteredResources.Contains(resource))
                         {
-                            queryParametersList.Add(Tuple.Create(KnownQueryParameterNames.Type, resource));
+                            resources.Add(resource);
                         }
+                    }
+
+                    if (resources.Count > 0)
+                    {
+                        queryParametersList.Add(Tuple.Create(KnownQueryParameterNames.Type, resources.JoinByOrSeparator()));
                     }
                 }
 
@@ -564,42 +605,6 @@ namespace Microsoft.Health.Fhir.Core.Features.Operations.Export
             foreach (SearchResultEntry result in searchResults)
             {
                 ResourceWrapper resourceWrapper = result.Resource;
-
-                string resourceType = resourceWrapper.ResourceTypeName;
-
-                // Check whether we already have an existing file for the current resource type.
-                if (!_resourceTypeToFileInfoMapping.TryGetValue(resourceType, out ExportFileInfo exportFileInfo))
-                {
-                    // Check whether we have seen this file previously (in situations where we are resuming an export)
-                    if (_exportJobRecord.Output.TryGetValue(resourceType, out exportFileInfo))
-                    {
-                        // A file already exists for this resource type. Let us open the file on the client.
-                        await _exportDestinationClient.OpenFileAsync(exportFileInfo.FileUri, cancellationToken);
-                    }
-                    else
-                    {
-                        // File does not exist. Create it.
-                        string fileName = _exportJobRecord.ExportFormat + ".ndjson";
-
-                        string dateTime = _exportJobRecord.QueuedTime.UtcDateTime.ToString("s")
-                                .Replace("-", string.Empty, StringComparison.OrdinalIgnoreCase)
-                                .Replace(":", string.Empty, StringComparison.OrdinalIgnoreCase);
-
-                        fileName = fileName.Replace(ExportFormatTags.Timestamp, dateTime, StringComparison.OrdinalIgnoreCase);
-                        fileName = fileName.Replace(ExportFormatTags.Id, _exportJobRecord.Id, StringComparison.OrdinalIgnoreCase);
-                        fileName = fileName.Replace(ExportFormatTags.ResourceName, resourceType, StringComparison.OrdinalIgnoreCase);
-
-                        Uri fileUri = await _exportDestinationClient.CreateFileAsync(fileName, cancellationToken);
-
-                        exportFileInfo = new ExportFileInfo(resourceType, fileUri, sequence: 0);
-
-                        // Since we created a new file the JobRecord Output also needs to know about it.
-                        _exportJobRecord.Output.TryAdd(resourceType, exportFileInfo);
-                    }
-
-                    _resourceTypeToFileInfoMapping.Add(resourceType, exportFileInfo);
-                }
-
                 ResourceElement element = _resourceDeserializer.Deserialize(resourceWrapper);
 
                 if (anonymizer != null)
@@ -610,10 +615,7 @@ namespace Microsoft.Health.Fhir.Core.Features.Operations.Export
                 // Serialize into NDJson and write to the file.
                 byte[] bytesToWrite = _resourceToByteArraySerializer.Serialize(element);
 
-                await _exportDestinationClient.WriteFilePartAsync(exportFileInfo.FileUri, partId, bytesToWrite, cancellationToken);
-
-                // Increment the file information.
-                exportFileInfo.IncrementCount(bytesToWrite.Length);
+                await _fileManager.WriteToFile(resourceWrapper.ResourceTypeName, partId, bytesToWrite, cancellationToken);
             }
         }
 
@@ -665,7 +667,7 @@ namespace Microsoft.Health.Fhir.Core.Features.Operations.Export
             string status = _exportJobRecord.Status.ToString();
             string queuedTime = _exportJobRecord.QueuedTime.ToString("u") ?? string.Empty;
             string endTime = _exportJobRecord.EndTime?.ToString("u") ?? string.Empty;
-            long dataSize = _exportJobRecord.Output?.Values.Sum(job => job?.CommittedBytes ?? 0) ?? 0;
+            long dataSize = _exportJobRecord.Output?.Values.Sum(fileList => fileList.Sum(job => job?.CommittedBytes ?? 0)) ?? 0;
             bool isAnonymizedExport = IsAnonymizedExportJob();
 
             return $"Export job completed. Id: {id}, Status {status}, Queued Time: {queuedTime}, End Time: {endTime}, DataSize: {dataSize}, IsAnonymizedExport: {isAnonymizedExport}";

@@ -55,7 +55,15 @@ namespace Microsoft.Health.Fhir.Core.UnitTests.Features.Search.Expressions.Parse
             return Enum.GetValues(typeof(SearchModifierCode))
                 .Cast<SearchModifierCode>()
                 .Where(modifier => modifier != SearchModifierCode.Missing)
-                .Select(modifier => new object[] { modifier });
+                .Select(modifier => new object[] { new SearchModifier(modifier, modifier == SearchModifierCode.Type ? ResourceType.Patient.ToString() : null) });
+        }
+
+        public static IEnumerable<object[]> GetAllModifiersExceptMissingOrType()
+        {
+            return Enum.GetValues(typeof(SearchModifierCode))
+                .Cast<SearchModifierCode>()
+                .Where(modifier => modifier != SearchModifierCode.Missing && modifier != SearchModifierCode.Type)
+                .Select(modifier => new object[] { new SearchModifier(modifier) });
         }
 
         [Theory]
@@ -65,7 +73,7 @@ namespace Microsoft.Health.Fhir.Core.UnitTests.Features.Search.Expressions.Parse
         {
             Expression expression = _parser.Parse(
                 CreateSearchParameter(SearchParamType.String),
-                SearchModifierCode.Missing,
+                new SearchModifier(SearchModifierCode.Missing),
                 isMissingString);
 
             ValidateMissingParamExpression(expression, DefaultParamName, expectedIsMissing);
@@ -75,7 +83,7 @@ namespace Microsoft.Health.Fhir.Core.UnitTests.Features.Search.Expressions.Parse
         public void GivenMissingModifierWithAnInvalidValue_WhenBuilding_ThenInvalidSearchOperationExceptionShouldBeThrown()
         {
             Assert.Throws<InvalidSearchOperationException>(
-                () => _parser.Parse(CreateSearchParameter(SearchParamType.String), SearchModifierCode.Missing, "test"));
+                () => _parser.Parse(CreateSearchParameter(SearchParamType.String), new SearchModifier(SearchModifierCode.Missing), "test"));
         }
 
         [Fact]
@@ -116,6 +124,7 @@ namespace Microsoft.Health.Fhir.Core.UnitTests.Features.Search.Expressions.Parse
             SearchParameterComponentInfo[] components = new[] { new SearchParameterComponentInfo() };
             var searchParameter1 = new SearchParameterInfo(
                 DefaultParamName,
+                DefaultParamName,
                 Microsoft.Health.Fhir.ValueSets.SearchParamType.Composite,
                 components: components);
             SearchParameterInfo searchParameter = searchParameter1;
@@ -137,11 +146,12 @@ namespace Microsoft.Health.Fhir.Core.UnitTests.Features.Search.Expressions.Parse
 
             SearchParameterComponentInfo[] components =
             {
-                new SearchParameterComponentInfo(codeUri) { ResolvedSearchParameter = new SearchParameterInfo("code", ValueSets.SearchParamType.Token) },
-                new SearchParameterComponentInfo(quantityUri) { ResolvedSearchParameter = new SearchParameterInfo("quantity", ValueSets.SearchParamType.Quantity) },
+                new SearchParameterComponentInfo(codeUri) { ResolvedSearchParameter = new SearchParameterInfo("code", "code", ValueSets.SearchParamType.Token) },
+                new SearchParameterComponentInfo(quantityUri) { ResolvedSearchParameter = new SearchParameterInfo("quantity", "quantity", ValueSets.SearchParamType.Quantity) },
             };
 
             SearchParameterInfo searchParameter = new SearchParameterInfo(
+                DefaultParamName,
                 DefaultParamName,
                 Microsoft.Health.Fhir.ValueSets.SearchParamType.Composite,
                 components: components);
@@ -184,11 +194,12 @@ namespace Microsoft.Health.Fhir.Core.UnitTests.Features.Search.Expressions.Parse
 
             SearchParameterComponentInfo[] components =
             {
-                new SearchParameterComponentInfo(quantityUri) { ResolvedSearchParameter = new SearchParameterInfo("quantity", ValueSets.SearchParamType.Quantity) },
-                new SearchParameterComponentInfo(quantityUri) { ResolvedSearchParameter = new SearchParameterInfo("quantity", ValueSets.SearchParamType.Quantity) },
+                new SearchParameterComponentInfo(quantityUri) { ResolvedSearchParameter = new SearchParameterInfo("quantity", "quantity", ValueSets.SearchParamType.Quantity) },
+                new SearchParameterComponentInfo(quantityUri) { ResolvedSearchParameter = new SearchParameterInfo("quantity", "quantity", ValueSets.SearchParamType.Quantity) },
             };
 
             SearchParameterInfo searchParameter = new SearchParameterInfo(
+                DefaultParamName,
                 DefaultParamName,
                 Microsoft.Health.Fhir.ValueSets.SearchParamType.Composite,
                 components: components);
@@ -216,12 +227,13 @@ namespace Microsoft.Health.Fhir.Core.UnitTests.Features.Search.Expressions.Parse
 
         [Theory]
         [MemberData(nameof(GetAllModifiersExceptMissing))]
-        public void GivenACompositeWithInvalidModifier_WhenBuilding_ThenInvalidSearchOperationExceptionShouldBeThrown(SearchModifierCode modifier)
+        public void GivenACompositeWithInvalidModifier_WhenBuilding_ThenInvalidSearchOperationExceptionShouldBeThrown(SearchModifier modifier)
         {
             var quantityUri = new Uri("http://quantity");
 
             SearchParameterComponentInfo[] components = new[] { new SearchParameterComponentInfo(quantityUri), new SearchParameterComponentInfo(quantityUri) };
             var searchParameter1 = new SearchParameterInfo(
+                DefaultParamName,
                 DefaultParamName,
                 Microsoft.Health.Fhir.ValueSets.SearchParamType.Composite,
                 components: components);
@@ -231,6 +243,7 @@ namespace Microsoft.Health.Fhir.Core.UnitTests.Features.Search.Expressions.Parse
                 new SearchParameter
                 {
                     Name = "quantity",
+                    Code = "quantity",
                     Type = SearchParamType.Quantity,
                 }.ToInfo());
 
@@ -383,7 +396,7 @@ namespace Microsoft.Health.Fhir.Core.UnitTests.Features.Search.Expressions.Parse
 
         [Theory]
         [MemberData(nameof(GetAllModifiersExceptMissing))]
-        public void GivenADateWithInvalidModifier_WhenBuilding_ThenInvalidSearchOperationExceptionShouldBeThrown(SearchModifierCode modifier)
+        public void GivenADateWithInvalidModifier_WhenBuilding_ThenInvalidSearchOperationExceptionShouldBeThrown(SearchModifier modifier)
         {
             Assert.Throws<InvalidSearchOperationException>(
                 () => _parser.Parse(CreateSearchParameter(SearchParamType.Date), modifier, "1980"));
@@ -433,7 +446,7 @@ namespace Microsoft.Health.Fhir.Core.UnitTests.Features.Search.Expressions.Parse
 
         [Theory]
         [MemberData(nameof(GetAllModifiersExceptMissing))]
-        public void GivenANumberWithInvalidModifier_WhenBuilding_ThenInvalidSearchOperationExceptionShouldBeThrown(SearchModifierCode modifier)
+        public void GivenANumberWithInvalidModifier_WhenBuilding_ThenInvalidSearchOperationExceptionShouldBeThrown(SearchModifier modifier)
         {
             Assert.Throws<InvalidSearchOperationException>(
                 () => _parser.Parse(CreateSearchParameter(SearchParamType.Number), modifier, "123"));
@@ -548,7 +561,7 @@ namespace Microsoft.Health.Fhir.Core.UnitTests.Features.Search.Expressions.Parse
 
         [Theory]
         [MemberData(nameof(GetAllModifiersExceptMissing))]
-        public void GivenAQuantityWithInvalidModifier_WhenBuilding_ThenInvalidSearchOperationExceptionShouldBeThrown(SearchModifierCode modifier)
+        public void GivenAQuantityWithInvalidModifier_WhenBuilding_ThenInvalidSearchOperationExceptionShouldBeThrown(SearchModifier modifier)
         {
             Assert.Throws<InvalidSearchOperationException>(
                 () => _parser.Parse(CreateSearchParameter(SearchParamType.Quantity), modifier, "1"));
@@ -589,6 +602,26 @@ namespace Microsoft.Health.Fhir.Core.UnitTests.Features.Search.Expressions.Parse
                     e1 => ValidateStringExpression(e1, FieldName.ReferenceResourceId, StringOperator.Equals, resourceId, false)));
         }
 
+        [Fact]
+        public void GivenAReferenceUsingResourceIdWithTargetTypeModifierTargetingInternalResource_WhenBuilt_ThenCorrectExpressionShouldBeCreated()
+        {
+            const ResourceType resourceType = ResourceType.Patient;
+            const string resourceId = "123";
+
+            _referenceSearchValueParser.Parse(resourceId).Returns(new ReferenceSearchValue(ReferenceKind.Internal, null, null, resourceId));
+
+            Validate(
+                CreateSearchParameter(SearchParamType.Reference),
+                new SearchModifier(SearchModifierCode.Type, resourceType.ToString()),
+                resourceId.ToString(),
+                e => ValidateMultiaryExpression(
+                    e,
+                    MultiaryOperator.And,
+                    e1 => ValidateMissingFieldExpression(e1, FieldName.ReferenceBaseUri),
+                    e1 => ValidateStringExpression(e1, FieldName.ReferenceResourceType, StringOperator.Equals, resourceType.ToString(), false),
+                    e1 => ValidateStringExpression(e1, FieldName.ReferenceResourceId, StringOperator.Equals, resourceId, false)));
+        }
+
         [Theory]
         [InlineData(ReferenceKind.InternalOrExternal)]
         [InlineData(ReferenceKind.External)]
@@ -603,6 +636,30 @@ namespace Microsoft.Health.Fhir.Core.UnitTests.Features.Search.Expressions.Parse
             Validate(
                 CreateSearchParameter(SearchParamType.Reference),
                 null,
+                reference,
+                e => ValidateMultiaryExpression(
+                    e,
+                    MultiaryOperator.And,
+                    e1 => ValidateStringExpression(e1, FieldName.ReferenceResourceType, StringOperator.Equals, resourceType.ToString(), false),
+                    e1 => ValidateStringExpression(e1, FieldName.ReferenceResourceId, StringOperator.Equals, resourceId, false)));
+        }
+
+        [Theory]
+        [InlineData(ReferenceKind.InternalOrExternal, true)]
+        [InlineData(ReferenceKind.InternalOrExternal, false)]
+        [InlineData(ReferenceKind.External, true)]
+        [InlineData(ReferenceKind.External, false)]
+        public void GivenAReferenceUsingResourceIdWithTargetTypeModifier_WhenBuilt_ThenCorrectExpressionShouldBeCreated(ReferenceKind referenceLocations, bool withResourceType)
+        {
+            const ResourceType resourceType = ResourceType.Patient;
+            const string resourceId = "123";
+            string reference = $"{(withResourceType ? resourceType + "/" : null)}{resourceId}";
+
+            _referenceSearchValueParser.Parse(reference).Returns(new ReferenceSearchValue(referenceLocations, null, withResourceType ? resourceType.ToString() : null, resourceId));
+
+            Validate(
+                CreateSearchParameter(SearchParamType.Reference),
+                new SearchModifier(SearchModifierCode.Type, resourceType.ToString()),
                 reference,
                 e => ValidateMultiaryExpression(
                     e,
@@ -635,13 +692,24 @@ namespace Microsoft.Health.Fhir.Core.UnitTests.Features.Search.Expressions.Parse
         }
 
         [Theory]
-        [MemberData(nameof(GetAllModifiersExceptMissing))]
-        public void GivenAReferenceWithInvalidModifier_WhenBuilding_ThenInvalidSearchOperationExceptionShouldBeThrown(SearchModifierCode modifier)
+        [MemberData(nameof(GetAllModifiersExceptMissingOrType))]
+        public void GivenAReferenceWithInvalidModifier_WhenBuilding_ThenInvalidSearchOperationExceptionShouldBeThrown(SearchModifier modifier)
         {
             _referenceSearchValueParser.Parse(Arg.Any<string>()).Returns(new ReferenceSearchValue(ReferenceKind.InternalOrExternal, null, null, "123"));
 
             Assert.Throws<InvalidSearchOperationException>(
                 () => _parser.Parse(CreateSearchParameter(SearchParamType.Reference), modifier, "Patient/test"));
+        }
+
+        [Theory]
+        [InlineData("Patient", "Group", "test")]
+        [InlineData("InvalidModifier", null, "test")]
+        public void GivenAReferenceWithInvalidTargetTypeModifier_WhenBuilding_ThenInvalidSearchOperationExceptionShouldBeThrown(string targetTypeModifier, string resourceType, string resourceId)
+        {
+            _referenceSearchValueParser.Parse(Arg.Any<string>()).Returns(new ReferenceSearchValue(ReferenceKind.InternalOrExternal, null, resourceType, resourceId));
+
+            Assert.Throws<InvalidSearchOperationException>(
+                () => _parser.Parse(CreateSearchParameter(SearchParamType.Reference), new SearchModifier(SearchModifierCode.Type, targetTypeModifier), $"{resourceType}{(string.IsNullOrEmpty(resourceType) ? null : "/")}{resourceId}"));
         }
 
         [Fact]
@@ -663,7 +731,7 @@ namespace Microsoft.Health.Fhir.Core.UnitTests.Features.Search.Expressions.Parse
 
             Validate(
                 CreateSearchParameter(SearchParamType.String),
-                SearchModifierCode.Exact,
+                new SearchModifier(SearchModifierCode.Exact),
                 input,
                 e => ValidateStringExpression(e, FieldName.String, StringOperator.Equals, input, false));
         }
@@ -675,7 +743,7 @@ namespace Microsoft.Health.Fhir.Core.UnitTests.Features.Search.Expressions.Parse
 
             Validate(
                 CreateSearchParameter(SearchParamType.String),
-                SearchModifierCode.Contains,
+                new SearchModifier(SearchModifierCode.Contains),
                 input,
                 e => ValidateStringExpression(e, FieldName.String, StringOperator.Contains, input, true));
         }
@@ -687,11 +755,11 @@ namespace Microsoft.Health.Fhir.Core.UnitTests.Features.Search.Expressions.Parse
         [InlineData(SearchModifierCode.Not)]
         [InlineData(SearchModifierCode.NotIn)]
         [InlineData(SearchModifierCode.Text)]
-        [InlineData(SearchModifierCode.Type)]
-        public void GivenAStringWithInvalidModifier_WhenBuilding_ThenInvalidSearchOperationExceptionShouldBeThrown(SearchModifierCode modifier)
+        [InlineData(SearchModifierCode.Type, ResourceType.Patient)]
+        public void GivenAStringWithInvalidModifier_WhenBuilding_ThenInvalidSearchOperationExceptionShouldBeThrown(SearchModifierCode modifier, ResourceType? targetTypeModifier = null)
         {
             Assert.Throws<InvalidSearchOperationException>(
-                () => _parser.Parse(CreateSearchParameter(SearchParamType.String), modifier, "test"));
+                () => _parser.Parse(CreateSearchParameter(SearchParamType.String), new SearchModifier(modifier, targetTypeModifier?.ToString()), "test"));
         }
 
         [Fact]
@@ -701,9 +769,21 @@ namespace Microsoft.Health.Fhir.Core.UnitTests.Features.Search.Expressions.Parse
 
             Validate(
                 CreateSearchParameter(SearchParamType.Token),
-                SearchModifierCode.Text,
+                new SearchModifier(SearchModifierCode.Text),
                 input,
                 e => ValidateStringExpression(e, FieldName.TokenText, StringOperator.StartsWith, input, true));
+        }
+
+        [Fact]
+        public void GivenATokenWithNotModifier_WhenBuilt_ThenCorrectExpressionShouldBeCreated()
+        {
+            const string input = "TestString123";
+
+            Validate(
+                CreateSearchParameter(SearchParamType.Token),
+                new SearchModifier(SearchModifierCode.Not),
+                input,
+                e => ValidateNotExpression(e, x => ValidateStringExpression(x, FieldName.TokenCode, StringOperator.Equals, input, false)));
         }
 
         [Theory]
@@ -713,10 +793,11 @@ namespace Microsoft.Health.Fhir.Core.UnitTests.Features.Search.Expressions.Parse
             var searchParameter = new SearchParameter
             {
                 Name = "test",
+                Code = "test",
                 Type = searchParameterType,
             };
 
-            Assert.Throws<InvalidSearchOperationException>(() => _parser.Parse(searchParameter.ToInfo(), SearchModifierCode.Text, "test"));
+            Assert.Throws<InvalidSearchOperationException>(() => _parser.Parse(searchParameter.ToInfo(), new SearchModifier(SearchModifierCode.Text), "test"));
         }
 
         [Fact]
@@ -784,12 +865,11 @@ namespace Microsoft.Health.Fhir.Core.UnitTests.Features.Search.Expressions.Parse
         [Theory]
         [InlineData(SearchModifierCode.Exact)]
         [InlineData(SearchModifierCode.Contains)]
-        [InlineData(SearchModifierCode.Not)]
-        [InlineData(SearchModifierCode.Type)]
-        public void GivenATokenWithInvalidModifier_WhenBuilding_ThenInvalidSearchOperationExceptionShouldBeThrown(SearchModifierCode modifier)
+        [InlineData(SearchModifierCode.Type, ResourceType.Patient)]
+        public void GivenATokenWithInvalidModifier_WhenBuilding_ThenInvalidSearchOperationExceptionShouldBeThrown(SearchModifierCode modifier, ResourceType? targetTypeModifier = null)
         {
             Assert.Throws<InvalidSearchOperationException>(
-                () => _parser.Parse(CreateSearchParameter(SearchParamType.Token), modifier, "test"));
+                () => _parser.Parse(CreateSearchParameter(SearchParamType.Token), new SearchModifier(modifier, targetTypeModifier?.ToString()), "test"));
         }
 
         [Fact]
@@ -811,7 +891,7 @@ namespace Microsoft.Health.Fhir.Core.UnitTests.Features.Search.Expressions.Parse
 
             Validate(
                 CreateSearchParameter(SearchParamType.Uri),
-                SearchModifierCode.Above,
+                new SearchModifier(SearchModifierCode.Above),
                 input,
                 e => ValidateMultiaryExpression(
                     e,
@@ -827,7 +907,7 @@ namespace Microsoft.Health.Fhir.Core.UnitTests.Features.Search.Expressions.Parse
 
             Validate(
                 CreateSearchParameter(SearchParamType.Uri),
-                SearchModifierCode.Below,
+                new SearchModifier(SearchModifierCode.Below),
                 input,
                 e => ValidateMultiaryExpression(
                     e,
@@ -843,11 +923,11 @@ namespace Microsoft.Health.Fhir.Core.UnitTests.Features.Search.Expressions.Parse
         [InlineData(SearchModifierCode.Text)]
         [InlineData(SearchModifierCode.In)]
         [InlineData(SearchModifierCode.NotIn)]
-        [InlineData(SearchModifierCode.Type)]
-        public void GivenAUriWithInvalidModifier_WhenBuilding_ThenInvalidSearchOperationExceptionShouldBeThrown(SearchModifierCode modifier)
+        [InlineData(SearchModifierCode.Type, ResourceType.Patient)]
+        public void GivenAUriWithInvalidModifier_WhenBuilding_ThenInvalidSearchOperationExceptionShouldBeThrown(SearchModifierCode modifier, ResourceType? targetTypeModifier = null)
         {
             Assert.Throws<InvalidSearchOperationException>(
-                () => _parser.Parse(CreateSearchParameter(SearchParamType.Uri), modifier, "test"));
+                () => _parser.Parse(CreateSearchParameter(SearchParamType.Uri), new SearchModifier(modifier, targetTypeModifier?.ToString()), "test"));
         }
 
         private SearchParameterInfo CreateSearchParameter(SearchParamType searchParameterType)
@@ -855,13 +935,14 @@ namespace Microsoft.Health.Fhir.Core.UnitTests.Features.Search.Expressions.Parse
             return new SearchParameter
             {
                 Name = DefaultParamName,
+                Code = DefaultParamName,
                 Type = searchParameterType,
             }.ToInfo();
         }
 
         private void Validate(
             SearchParameterInfo searchParameter,
-            SearchModifierCode? modifier,
+            SearchModifier modifier,
             string value,
             Action<Expression> valueValidator)
         {

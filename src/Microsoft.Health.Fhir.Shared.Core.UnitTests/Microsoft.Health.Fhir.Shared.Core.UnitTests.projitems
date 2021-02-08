@@ -22,6 +22,7 @@
     <Compile Include="$(MSBuildThisFileDirectory)Features\Search\Converters\FhirStringToTokenSearchValueTypeConverterTests.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Features\Search\Converters\NodeConverterTests\AddressNodeToStringSearchValueTypeConverterTests.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Features\Search\Converters\NodeConverterTests\BooleanNodeToBooleanSearchValueTypeConverterTests.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Features\Search\Converters\NodeConverterTests\CanonicalNodeToUriSearchValueTypeConverterTests.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Features\Search\Converters\NodeConverterTests\CodeableConceptNodeToTokenSearchValueTypeConverterTests.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Features\Search\Converters\NodeConverterTests\CodeOfTNodeToTokenSearchValueTypeConverterTests.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Features\Search\Converters\NodeConverterTests\CodeNodeToTokenSearchValueTypeConverterTests.cs" />
@@ -50,8 +51,10 @@
     <Compile Include="$(MSBuildThisFileDirectory)Features\Search\LightweightReferenceToElementResolverTests.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Features\Search\SearchIndexerTests.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Features\Search\SearchParameters\SearchConverterForAllSearchTypes.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Features\Search\SearchParameters\SearchParameterBehaviorTests.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Features\Search\SearchParameters\SearchParameterDefinitionManagerTests.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Features\Search\SearchParameters\SearchParameterFixtureData.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Features\Search\SearchParameters\SearchParameterValidatorTests.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Features\Search\SearchParameters\SearchParameterSupportResolverTests.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Features\Search\SearchParameters\SearchParameterToTypeResolverTests.cs" />
     <Compile Include="..\Microsoft.Health.Fhir.Shared.Core.UnitTests\Features\Conformance\ProfileReferenceConverterTests.cs" />

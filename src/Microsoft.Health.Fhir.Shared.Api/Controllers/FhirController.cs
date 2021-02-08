@@ -145,6 +145,7 @@ namespace Microsoft.Health.Fhir.Api.Controllers
         [HttpPost]
         [Route(KnownRoutes.ResourceType)]
         [AuditEventType(AuditEventSubType.Create)]
+        [ServiceFilter(typeof(SearchParameterFilterAttribute))]
         public async Task<IActionResult> Create([FromBody] Resource resource)
         {
             RawResourceElement response = await _mediator.CreateResourceAsync(resource.ToResourceElement(), HttpContext.RequestAborted);
@@ -165,7 +166,7 @@ namespace Microsoft.Health.Fhir.Api.Controllers
         [AuditEventType(AuditEventSubType.Create)]
         public async Task<IActionResult> ConditionalCreate([FromBody] Resource resource)
         {
-            StringValues conditionalCreateHeader = HttpContext.Request.Headers[KnownFhirHeaders.IfNoneExist];
+            StringValues conditionalCreateHeader = HttpContext.Request.Headers[KnownHeaders.IfNoneExist];
 
             Tuple<string, string>[] conditionalParameters = QueryHelpers.ParseQuery(conditionalCreateHeader)
                 .SelectMany(query => query.Value, (query, value) => Tuple.Create(query.Key, value)).ToArray();
@@ -358,7 +359,7 @@ namespace Microsoft.Health.Fhir.Api.Controllers
         [HttpDelete]
         [Route(KnownRoutes.ResourceTypeById)]
         [AuditEventType(AuditEventSubType.Delete)]
-        public async Task<IActionResult> Delete(string typeParameter, string idParameter, [FromQuery]bool hardDelete)
+        public async Task<IActionResult> Delete(string typeParameter, string idParameter, [FromQuery] bool hardDelete)
         {
             DeleteResourceResponse response = await _mediator.DeleteResourceAsync(new ResourceKey(typeParameter, idParameter), hardDelete, HttpContext.RequestAborted);
 
